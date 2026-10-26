@@ -1,5 +1,6 @@
 #include<stdio.h>
 #include<stdlib.h>
+#include<string.h>
 #include"LIST.h"
 
 
@@ -11,41 +12,64 @@ struct NodeList {
 
 struct List {
     size_t size; // tamaño de la lista
-    Node *head; // puntero al primer nodo de la lista
-    Node *tail; // puntero al ultimo nodo de la lista
+    size_t eSize; // tamaño de los elementos que se van a guardar
+    NodeL *head; // puntero al primer nodo de la lista
+    NodeL *tail; // puntero al ultimo nodo de la lista
 };
 
 List *NewList(void){
     List *list;
 
     list = (List *)malloc(sizeof(List));
-    if(list != NULL){
-        list->head = NULL;
-        list->tail = NULL;
-        list->size = 0;
+    if(list == NULL){
+        fprintf(stderr, "Error: fallo de memoria al crear la lista.\n");
+        return NULL;
     }
+
+    list->head = NULL;
+    list->tail = NULL;
+    list->size = 0;
+    list->eSize = 0;
     return list;
 }
 
 List *CopyList(const List *list){
-    const Node *current;
-    Node *new;
+    const NodeL *current;
+    NodeL *new;
     List *newList;
+    void *copy;
 
     if(list == NULL) return NULL;
 
-    newList = NewList();
+    newList = (List *)malloc(sizeof(List));
     if(newList == NULL) return NULL;
+
+    newList->head = NULL;
+    newList->tail = NULL;
+    newList->size = 0;
+    newList->eSize = list->eSize;
 
     current = list->head;
     while (current != NULL){
-        new = (Node *)malloc(sizeof(Node));
-        if(new == NULL){
-            ClearList(newList);
+        copy = malloc(list->eSize);
+        new  = (NodeL *)malloc(sizeof(NodeL));
+
+        if(copy == NULL || new == NULL){
+            free(copy);          /* free(NULL) es válido */
+            free(new);
+            while(newList->head != NULL){
+                new = newList->head;
+                newList->head = new->next;
+                free(new->element);
+                free(new);
+            }
             free(newList);
+            fprintf(stderr, "fallo de memoria al copiar la lista.\n");
             return NULL;
         }
-        new->element = current->element;
+
+        memcpy(copy, current->element, list->eSize);
+        new->element = copy;
         new->next = NULL;
         new->prev = newList->tail;
 
@@ -64,62 +88,166 @@ List *CopyList(const List *list){
 }
 
 List *ConcatList(const List *list1, const List *list2){
+    const List *srcs[2];
     List *newList;
-    const Node *current;
+    const NodeL *current;
+    NodeL  *new, *prev;
+    void *copy;
+    size_t i;
 
     if(list1 == NULL && list2 == NULL) return NULL;
-    newList = NewList();
-    if(newList == NULL) return NULL;
-
-    if(list1 != NULL){
-        current = list1->head;
-        while(current != NULL){
-            Add(newList, current->element, GetSize(newList));
-            current = current->next;
-        }
+    if((list1 != NULL) && (list2 != NULL) && (list1->eSize != 0) && (list2->eSize != 0) && (list1->eSize != list2->eSize)){
+        fprintf(stderr, "Error: las listas tienen elementos de distinto tamaño, por lo que no se pueden concatenar.\n");
+        return NULL;
     }
 
-    if(list2 != NULL){
-        current = list2->head;
-        while(current != NULL){
-            Add(newList, current->element, GetSize(newList));
-            current = current->next;
+    newList = (List *)malloc(sizeof(List));
+    if(newList == NULL){
+        fprintf(stderr, "Error: fallo de memoria al crear la nueva lista para concatenar.\n");
+        return NULL;
+    }
+
+    newList->head = NULL;
+    newList->tail = NULL;
+    newList->size = 0;
+    if((list1 != NULL) && (list1->eSize != 0)){
+        newList->eSize = list1->eSize;
+    }else if(list2 != NULL){
+        newList->eSize = list2->eSize;
+    }else{
+        newList->eSize = 0;
+    }
+
+    srcs[0] = list1;
+    srcs[1] = list2;
+    prev   = NULL;
+
+    for(i = 0; i < 2; i++){
+        if(srcs[i] != NULL){
+            current = srcs[i]->head;
+            while(current != NULL){
+                copy = malloc(newList->eSize);
+                new = (NodeL *)malloc(sizeof(NodeL));
+                if(copy == NULL || new == NULL){
+                    free(copy);
+                    free(new);
+
+                    while(newList->head != NULL){
+                        new = newList->head;
+                        newList->head = new->next;
+                        free(new->element);
+                        free(new);
+                    }
+                    free(newList);
+                    fprintf(stderr, "Error: fallo de memoria al copiar uno de los nodo.\n");
+                    return NULL;
+                }
+
+                memcpy(copy, current->element, newList->eSize);
+
+                new->element = copy;
+                new->prev = prev;
+                new->next = NULL;
+
+                if(prev != NULL){
+                    prev->next = new;
+                }else{
+                    newList->head = new;
+                }
+
+                newList->tail = new;
+                prev = new;
+                newList->size++;
+
+                current = current->next;
+            }
         }
     }
 
     return newList;
 }
 
-List *SearchElement(const List *list, void *ele){
+List *SearchElement(const List *list, void *ele, int (*cmp)(const void *, const void *)){
     List *newlist;
-    const Node *current;
+    const NodeL *current;
+    NodeL *new, *prev;
+    void *copy;
 
     if(list == NULL) return NULL;
+    
+    if(ele == NULL || cmp == NULL){
+        fprintf(stderr, "Error: elemento o comparador no hallados.\n");
+        return NULL;
+    }
 
-    newlist = NewList();
+    newlist = (List *)malloc(sizeof(List));
+    if(newlist == NULL){
+        fprintf(stderr, "Error: fallo de memoria al crear una lista.\n");
+        return NULL;
+    }
+
+    newlist->head = NULL;
+    newlist->tail = NULL;
+    newlist->size = 0;
+    newlist->eSize = list->eSize;
+
+    prev = NULL;
     current = list->head;
     while(current != NULL){
-        if(current->element == ele){
-            Add(newlist, current->element, GetSize(newlist));
+        if(cmp(current->element, ele) != 0){
+            copy = malloc(newlist->eSize);
+            new  = (NodeL *)malloc(sizeof(NodeL));
+
+            if(copy == NULL || new == NULL){
+                free(copy);
+                free(new);
+                while(newlist->head != NULL){
+                    new = newlist->head;
+                    newlist->head = new->next;
+                    free(new->element);
+                    free(new);
+                }
+                free(newlist);
+                fprintf(stderr, "Error: fallo de memoria al copiar uno de los nodos.\n");
+                return NULL;
+            }
+
+            memcpy(copy, current->element, newlist->eSize);
+
+            new->element = copy;
+            new->prev = prev;
+            new->next = NULL;
+
+            if(prev != NULL){
+                prev->next = new;
+            }else{
+                newlist->head = new;
+            }
+
+            newlist->tail = new;
+            prev = new;
+            newlist->size++;
         }
+
         current = current->next;
     }
+
     return newlist;
 }
 
-const Node *GetHead(const List *list){
+const NodeL *GetHead(const List *list){
     return (list != NULL) ? list->head : NULL;
 }
 
-const Node *GetTail(const List *list){
+const NodeL *GetTail(const List *list){
     return (list != NULL) ? list->tail : NULL;
 }
 
-const Node *GetPrev(const Node *node){
+const NodeL *GetPrev(const NodeL *node){
     return (node != NULL) ? node->prev : NULL;
 }
 
-const Node *GetNext(const Node *node){
+const NodeL *GetNext(const NodeL *node){
     return (node != NULL) ? node->next : NULL;
 }
 
@@ -127,7 +255,7 @@ size_t GetSize(const List *list){
     return (list != NULL) ? list->size : 0;
 }
 
-void *GetElement(const Node *node){
+void *GetElement(const NodeL *node){
     return (node != NULL) ? node->element : NULL;
 }
 
@@ -135,79 +263,101 @@ int IsEmpty(const List *list){
     return (list == NULL || list->head == NULL) ? 1 : 0;
 }
 
-void Add(List *list, void *ele, size_t pos){
-    Node *new, *current;
+void Add(List *list, void *elem, size_t elemSize, size_t pos){
+    NodeL *new, *current;
     size_t i;
+    void *save;
 
-    if(list != NULL && pos <= list->size){
-        new = (Node *)malloc(sizeof(Node));
-        if (new != NULL){
-            new->element = ele;
-            if(pos == 0){
-                if(list->head == NULL){
+
+    if((list != NULL) && (pos <= list->size) && (elemSize > 0) && (elem != NULL)){
+        if((list->eSize != 0) && (list->eSize != elemSize)){
+            fprintf(stderr, "Error: el tamaño del elemento no coincide con el de la lista.\n");
+        }else{
+            save = malloc(elemSize);
+            if(save != NULL){
+                new = (NodeL *)malloc(sizeof(NodeL));
+                if (new != NULL ){
+                    memcpy(save, elem, elemSize);
+                    new->element = save;
+                    new->prev = NULL;
                     new->next = NULL;
-                    list->tail = new;
+                    if(pos == 0){
+                        new->next = list->head;
+                        if(list->head == NULL){
+                            list->tail = new;
+                        }else{
+                            list->head->prev = new;
+                        }
+                        list->head = new;
+                    }else if(pos == list->size){
+                        new->prev = list->tail;
+                        list->tail->next = new;
+                        list->tail  = new;
+                    }else{
+                        current = list->head;
+                        for( i = 0; i < pos - 1; i++){
+                            current = current->next;
+                        }
+                        new->prev = current;
+                        new->next = current->next;
+                        current->next->prev = new;
+                        current->next = new;
+                    }
+
+                    list->size++;
+                    list->eSize = elemSize;
                 }else{
-                    list->head->prev = new;
-                    new->next = list->head;
+                    fprintf(stderr, "Error: fallo de memoria al agregar un nuevo elemento.\n");
+                    free(save);
                 }
-                new->prev = NULL;
-                list->head = new;
-            }else if(pos == list->size){
-                list->tail->next = new;
-                new->prev = list->tail;
-                new->next = NULL;
-                list->tail  = new;
             }else{
-                current = list->head;
-                for( i = 0; i < pos - 1; i++){
-                    current = current->next;
-                }
-                new->prev = current;
-                new->next = current->next;
-                current->next->prev = new;
-                current->next = new;
+                fprintf(stderr, "Error: fallo de memoria al agregar un nuevo elemento.\n");
             }
-            list->size += 1;
         }
     }
 }
 
 void Delete(List *list, size_t pos){
-    Node *current;
+    NodeL *current;
     size_t i;
 
-    if(list != NULL && pos < list->size){
-        if(pos == 0){
-            current = list->head;
-            list->head = list->head->next;
-            if (list->head != NULL) {
-                list->head->prev = NULL;
-            } else {
-                list->tail = NULL;
+    if(list != NULL){
+        if((pos < list->size)){
+            if(pos == 0){
+                current = list->head;
+                list->head = list->head->next;
+                if (list->head != NULL) {
+                    list->head->prev = NULL;
+                } else {
+                    list->tail = NULL;
+                }
+            }else if(pos == list->size - 1){
+                current = list->tail;
+                list->tail = list->tail->prev;
+                list->tail->next = NULL;
+            }else{
+                current = list->head;
+                for( i = 0; i < pos; i++){
+                    current = current->next;
+                }
+                current->prev->next = current->next;
+                current->next->prev = current->prev;
             }
-        }else if(pos == list->size - 1){
-            current = list->tail;
-            list->tail = list->tail->prev;
-            list->tail->next = NULL;
+
+            free(current->element);
+            free(current);
+            list->size -= 1;
         }else{
-            current = list->head;
-            for( i = 0; i < pos; i++){
-                current = current->next;
-            }
-            current->prev->next = current->next;
-            current->next->prev = current->prev;
+            fprintf(stderr, "Error: posición fuera de rango.\n");
         }
-        free(current);
-        list->size -= 1;
     }
 }
 
-void *SearchPosition(const List *list, size_t pos){
+void *SearchInPosition(const List *list, size_t pos){
     size_t i;
-    Node *current;
+    NodeL *current;
 
-    if (IsEmpty(list) || pos >= list->size) return NULL;
+    if ((list == NULL) || (list->head == NULL) || (pos >= list->size)) return NULL;
 
     current = list->head;
     for( i = 0; i < pos; i++){
@@ -217,77 +367,85 @@ void *SearchPosition(const List *list, size_t pos){
     return current->element;
 }
 
-void SplitList(List *list, List **list1, List **list2){
-    Node *current, *next, *splitNode;
+void SplitList(List *list, List *list1, List *list2){
+    NodeL *current, *next, *cut, *splitted;
     size_t mid, i;
 
     if(list != NULL){
+        if((list1 != NULL) && (list2 != NULL)){
+            if((list1 != list) && (list2 != list) && (list1 != list2)){
+                current = list1->head;
+                while (current != NULL){
+                    next = current->next;
+                    free(current->element);
+                    free(current);
+                    current = next;
+                }
+                list1->head = NULL;
+                list1->tail = NULL;
+                list1->size = 0;
 
-        if(*list1 != NULL){
-            current = (*list1)->head;
-            while (current != NULL){
-                next = current->next;
-                free(current);
-                current = next;
+                current = list2->head;
+                while (current != NULL){
+                    next = current->next;
+                    free(current->element);
+                    free(current);
+                    current = next;
+                }
+                list2->head = NULL;
+                list2->tail = NULL;
+                list2->size = 0;
+
+                if(list->eSize != 0){
+                    list1->eSize = list->eSize;
+                    list2->eSize = list->eSize;
+                }
+                if(list->size > 0){
+                    mid = list->size / 2;
+                    if((list->size % 2) != 0) mid++;
+
+                    cut = list->head;
+                    for(i = 0; i < mid - 1; i++){
+                        cut = cut->next;
+                    }
+
+                    splitted = cut->next;
+                    cut->next = NULL;
+
+                    list1->head = list->head;
+                    list1->tail = cut;
+                    list1->size = mid;
+
+                    list2->head = splitted;
+                    list2->size = list->size - mid;
+                    if(splitted != NULL){
+                        splitted->prev = NULL;
+                        list2->tail = list->tail;
+                    }else{
+                        list2->tail = NULL;
+                    }
+                    
+                    list->head = NULL;
+                    list->tail = NULL;
+                    list->size = 0;
+                }
+            }else{
+                fprintf(stderr, "Error: las listas destinos deben ser diferentes a las de origen y entre si.\n");
             }
-            (*list1)->head = NULL;
-            (*list1)->tail = NULL;
-            (*list1)->size = 0;
+        }else{
+            fprintf(stderr, "Error: lista(s) destino(s) nula(s).\n");
         }
-
-        if(*list2 != NULL){
-            current = (*list2)->head;
-            while (current != NULL){
-                next = current->next;
-                free(current);
-                current = next;
-            }
-            (*list2)->head = NULL;
-            (*list2)->tail = NULL;
-            (*list2)->size = 0;
-        }
-
-        mid = list->size / 2;
-
-        if((list->size % 2) != 0) mid++;
-
-        splitNode = list->head;
-        for(i = 0; i < mid - 1; i++){
-            splitNode = splitNode->next;
-        }
-
-        if(*list1 == NULL){
-            *list1 = (List *)malloc(sizeof(List));
-        }
-        if(*list1 != NULL){
-            (*list1)->head = list->head;
-            (*list1)->tail = splitNode;
-            (*list1)->size = mid;
-            if((*list1)->tail != NULL) (*list1)->tail->next = NULL;
-        }
-
-        if(*list2 == NULL){
-            *list2 = (List *)malloc(sizeof(List));
-        }
-        if(*list2 != NULL){
-            (*list2)->head = splitNode->next;
-            (*list2)->tail = list->tail;
-            (*list2)->size = list->size - mid;
-            if((*list2)->head != NULL) (*list2)->head->prev = NULL;
-        }
-
-        list->head = NULL;
-        list->tail = NULL;
-        list->size = 0;
+    }else{
+        fprintf(stderr, "Error: la lista de origen es nula.\n");
     }
 }
 
 void MergeSortList(List *list, int (*cmp)(const void *, const void *)){
     size_t size, i;
-    Node *current, *next, *left, *right, *tail, *rest;
-    Node *merged, *mergedTail, *auxl, *auxr, *pick, *restNext;
+    NodeL *current, *next, *left, *right, *tail, *rest;
+    NodeL *merged, *mergedTail, *auxl, *auxr, *pick, *restNext;
 
-    if((list != NULL) && (list->head != NULL) && (list->head->next != NULL)){
+    if((list != NULL) && (list->head != NULL) && (list->head->next != NULL) && (cmp != NULL)){
         for(size = 1; size < list->size; size *= 2){
 
             left = list->head;
@@ -379,12 +537,13 @@ void MergeSortList(List *list, int (*cmp)(const void *, const void *)){
 }
 
 void ClearList(List *list){
-    Node *current, *next;
+    NodeL *current, *next;
 
     if(list != NULL){
         current = list->head;
         while (current != NULL){
             next = current->next;
+            free(current->element);
             free(current);
             current = next;
         }
@@ -395,12 +554,13 @@ void ClearList(List *list){
 }
 
 void DestroyList(List *list){
-    Node *current, *next;
+    NodeL *current, *next;
 
     if(list != NULL){
         current = list->head;
         while (current != NULL){
             next = current->next;
+            free(current->element);
             free(current);
             current = next;
         }
